@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ExcelWizPro</title>
+
+  <!-- Styles -->
+
+  <!-- Main JS bundle (Vite/Webpack output or your single JS file) -->
+<script type="module" src="/src/index.js"></script>
+</head>
+
+<body>
+
+  <main class="container">
+
+    <header class="header">
+      <h1>ExcelWizPro</h1>
+      <p class="subtitle">AI-Powered Excel Formula Assistant</p>
+    </header>
+
+    <section class="section">
+
+      <label for="sheetSelect" class="label">Active Sheet</label>
+      <select id="sheetSelect" class="dropdown"></select>
+
+      <label for="query" class="label">Your Request</label>
+      <textarea
+        id="query"
+        class="input-area"
+        placeholder="Example: sum sales for 2023 in region west"
+      ></textarea>
+
+      <div class="button-row">
+        <button id="generateBtn" class="btn primary">Generate Formula</button>
+        <button id="clearBtn" class="btn">Clear</button>
+      </div>
+
+      <pre id="output" class="output"></pre>
+
+    </section>
+
+  </main>
+
+</body>
+</html>
