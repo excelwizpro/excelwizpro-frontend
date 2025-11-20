@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ExcelWizPro</title>
+
+  <!-- Office.js -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Main stylesheet (handled by Vite) -->
+
+  <!-- Excel-safe scaling + dropdown fix -->
+  <style>
+    html, body {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 12px !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box;
+      background-color: #0e1016 !important;
+    }
+
+    .input-select {
+      color: #fff !important;
+      background-color: #1f242d !important;
+    }
+    .input-select option {
+      background-color: #f0f0f0 !important;
+      color: #000 !important;
+    }
+  </style>
+
+  <!-- Source JS (Vite rewrites to hashed dist version) -->
+  <script type="module" crossorigin src="/excelwizpro-frontend/assets/taskpane-B5O2m-_T.js"></script>
+  <link rel="stylesheet" crossorigin href="/excelwizpro-frontend/assets/taskpane-DlmTvIHe.css">
+</head>
+
+<body>
+
+  <div class="glass-card">
+
+    <header class="app-header">
+      <div class="logo-box">
+        <i data-lucide="wand-2" class="logo-icon"></i>
+      </div>
+      <div>
+        <h1 class="title">ExcelWizPro</h1>
+        <p class="subtitle">AI Formula Engine</p>
+      </div>
+    </header>
+
+    <div class="divider"></div>
+
+    <!-- Sheet Selection -->
+    <label class="input-label">
+      <i data-lucide="file-spreadsheet" class="icon-sm"></i>
+      Active Sheet
+    </label>
+    <select id="sheetSelect" class="input-select"></select>
+
+    <!-- Prompt -->
+    <label class="input-label" style="margin-top:10px;">
+      <i data-lucide="sparkles" class="icon-sm"></i>
+      Your Request
+    </label>
+    <textarea id="query" class="input-area" placeholder="e.g. sum sales for 2023 in region west"></textarea>
+
+    <!-- Buttons -->
+    <div class="button-row">
+
+      <!-- Full-width primary -->
+      <button id="generateBtn" class="btn primary">
+        <i data-lucide="cpu" class="icon-sm"></i>
+        Generate
+      </button>
+
+      <!-- Clear + Insert side-by-side -->
+      <div class="button-sub-row">
+        <button id="clearBtn" class="btn secondary">
+          <i data-lucide="eraser" class="icon-sm"></i>
+          Clear
+        </button>
+
+        <button id="insertBtn" class="btn secondary">
+          <i data-lucide="arrow-down-circle" class="icon-sm"></i>
+          Insert
+        </button>
+      </div>
+    </div>
+
+    <!-- Output -->
+    <div class="output-box">
+      <label class="input-label output-label">
+        <i data-lucide="terminal" class="icon-sm"></i>
+        Output
+      </label>
+      <pre id="output" class="output"></pre>
+    </div>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+
+</body>
+</html>
