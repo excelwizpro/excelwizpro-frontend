@@ -2,22 +2,20 @@
   "name": "excelwizpro-frontend",
   "version": "1.0.0",
   "private": true,
-  "description": "ExcelWizPro Taskpane Add-in (Frontend UI bundled with Vite)",
-  "type": "module",
-
-  "homepage": "https://excelwizpro.github.io/excelwizpro-frontend/",
-
-  "scripts": {
-    "dev": "vite --open",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rimraf dist",
-    "deploy": "npm run build && gh-pages -d dist"
+  "engines": {
+    "node": "18.x"
   },
-
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fluentui/web-components": "^2.6.0",
+    "@microsoft/office-js": "^1.1.67",
+    "axios": "^1.5.1"
+  },
   "devDependencies": {
-    "gh-pages": "^6.3.0",
-    "rimraf": "^5.0.5",
-    "vite": "^5.2.0"
+    "vite": "^4.5.0"
   }
 }
