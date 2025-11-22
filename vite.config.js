@@ -1,22 +1,30 @@
+// Final Vite configuration for ExcelWizPro
+// ----------------------------------------------------------
+// ✔ Single entry: taskpane.html
+// ✔ Supports Office.js (external)
+// ✔ No terser needed
+// ✔ Correct relative paths
+// ----------------------------------------------------------
+
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
 export default defineConfig({
-  root: ".",
+  base: "", // Important for Office add-ins (no GitHub pages prefix)
 
   build: {
     outDir: "dist",
-    emptyOutDir: true,
 
     rollupOptions: {
       input: {
-        taskpane: resolve(__dirname, "taskpane.html")
+        taskpane: resolve(__dirname, "taskpane.html"),
       },
-      output: {
-        entryFileNames: "taskpane.js",
-        chunkFileNames: "chunks/[name]-[hash].js",
-        assetFileNames: "[name].[ext]"
-      }
-    }
-  }
+
+      // Prevent Vite from trying to interpret Office.js
+      external: ["https://appsforoffice.microsoft.com/lib/1/hosted/office.js"],
+    },
+
+    // Avoid terser unless installed
+    minify: "esbuild",
+  },
 });

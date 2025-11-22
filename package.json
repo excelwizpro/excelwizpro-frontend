@@ -5,15 +5,19 @@
   "description": "ExcelWizPro Taskpane Add-in (Frontend UI bundled with Vite)",
   "type": "module",
 
+  "homepage": "https://excelwizpro.github.io/excelwizpro-frontend/",
+
   "scripts": {
     "dev": "vite --open",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "deploy": "npm run build && gh-pages -d dist"
   },
 
   "devDependencies": {
-    "vite": "^5.2.0",
-    "rimraf": "^5.0.5"
+    "gh-pages": "^6.3.0",
+    "rimraf": "^5.0.5",
+    "vite": "^5.2.0"
   }
 }

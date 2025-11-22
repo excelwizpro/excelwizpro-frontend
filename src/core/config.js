@@ -1,7 +1,7 @@
 // core/config.js
 export const EXWZ_VERSION = "13.0.0";
 
-export const DEFAULT_API_BASE = "https://excelwizpro-finalapi.onrender.com";
+export const DEFAULT_API_BASE = "https://excelwizpro-backend.onrender.com";
 
 // Column map cache TTL (enterprise-friendly)
 export const COLUMN_MAP_TTL_MS = 90 * 1000; // 90s

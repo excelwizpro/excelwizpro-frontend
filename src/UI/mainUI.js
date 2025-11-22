@@ -1,120 +1,171 @@
-// ui/mainUI.js
-import { getEl } from "../core/utils.js";
-import { generateFormulaFromBackend, warmUpBackend } from "../core/backendClient.js";
+// src/UI/mainUI.js — v17.0 (Safe Insert + Debug)
+/* global Excel, Office */
+
 import {
-  refreshSheetDropdown,
-  getExcelVersion
-} from "../core/excelApi.js";
-import { autoRefreshColumnMap, getCurrentColumnMap } from "../core/columnMapper.js";
+  autoRefreshColumnMap,
+  getCurrentColumnMap
+} from "../core/columnMapper.js";
+
+import { getExcelVersion, safeExcelRun } from "../core/excelApi.js";
+import { DEFAULT_API_BASE } from "../core/config.js";
 import { showToast } from "./toast.js";
-import { showError, clearError } from "./errorPanel.js";
-import { on } from "../core/eventBus.js";
+import { emit, on } from "../core/eventBus.js";
 
 let lastFormula = "";
-let isGenerating = false;
+
+/** Excel Web sanitiser */
+function sanitizeForExcel(str = "") {
+  let f = String(str)
+
+    // Remove backslash escapes
+    .replace(/\\+"/g, '"')
+    .replace(/\\+'/g, "'")
+    .replace(/\\/g, "")
+
+    // Zero-width junk
+    .replace(/[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00A0]/g, "")
+
+    // Newlines / tabs
+    .replace(/[\r\n\t]+/g, " ")
+
+    // Smart quotes
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+
+    // Unicode math
+    .replace(/×/g, "*").replace(/÷/g, "/")
+    .replace(/[–—−]/g, "-")
+
+    .replace(/ {2,}/g, " ")
+    .trim();
+
+  if (!f.startsWith("=")) f = "=" + f;
+  return f;
+}
+
+function resolveApiBase() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("apiBase")) return params.get("apiBase");
+
+    const saved = Office?.context?.roamingSettings?.get("excelwizpro_api_base");
+    if (saved) return saved;
+  } catch {}
+
+  return DEFAULT_API_BASE;
+}
 
 export async function initUI() {
-  const sheetSelect = getEl("sheetSelect");
-  const queryInput = getEl("query");
-  const output = getEl("output");
-  const genBtn = getEl("generateBtn");
-  const clearBtn = getEl("clearBtn");
-  const insertBtn = document.getElementById("insertBtn"); // recommended separate button
+  const sheetSelect = document.getElementById("sheetSelect");
+  const queryBox = document.getElementById("query");
+  const outputBox = document.getElementById("output");
+  const generateBtn = document.getElementById("generateBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const insertBtn = document.getElementById("insertBtn");
 
-  await refreshSheetDropdown(sheetSelect);
-  await autoRefreshColumnMap(true);
-  warmUpBackend();
+  // Load sheet list
+  await safeExcelRun(async (ctx) => {
+    const sheets = ctx.workbook.worksheets;
+    sheets.load("items/name");
+    await ctx.sync();
 
-  // Toast bridge
-  on("ui:toast", ({ message, kind }) => showToast(message, kind));
-
-  // Column map updated hook (optional)
-  on("columnMap:updated", () => {
-    // Could update a status indicator if desired
+    sheetSelect.innerHTML = "";
+    sheets.items.forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s.name;
+      opt.textContent = s.name;
+      sheetSelect.appendChild(opt);
+    });
   });
 
-  genBtn.addEventListener("click", async () => {
-    if (isGenerating) return;
-    const query = queryInput.value.trim();
-    if (!query) return showToast("⚠️ Enter a request", "warn");
-    if (!navigator.onLine) return showToast("📴 Offline", "warn");
+  await autoRefreshColumnMap(true);
+  on("ui:toast", ({ message, kind }) => showToast(message, kind));
 
-    isGenerating = true;
-    genBtn.disabled = true;
-    clearError();
-    output.textContent = "⏳ Generating…";
+  // ------------------
+  // GENERATE
+  // ------------------
+  generateBtn.addEventListener("click", async () => {
+    const prompt = queryBox.value.trim();
+    if (!prompt) return showToast("Enter a request.", "warn");
+
+    generateBtn.disabled = true;
+    outputBox.textContent = "Working…";
 
     try {
       await autoRefreshColumnMap(false);
-      if (!getCurrentColumnMap()) {
+      let columnMap = getCurrentColumnMap();
+      if (!columnMap) {
         await autoRefreshColumnMap(true);
+        columnMap = getCurrentColumnMap();
       }
 
-      const version = getExcelVersion();
-      const payload = {
-        query,
-        columnMap: getCurrentColumnMap(),
-        excelVersion: version,
-        mainSheet: sheetSelect.value
-      };
+      const res = await fetch(`${resolveApiBase()}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: prompt,
+          columnMap,
+          excelVersion: getExcelVersion(),
+          mainSheet: sheetSelect.value
+        })
+      });
 
-      const formula = await generateFormulaFromBackend(payload);
-      lastFormula = formula;
-      output.textContent = formula;
-      showToast("✅ Formula ready", "success");
+      const data = await res.json();
+      lastFormula = data.formula || "=ERROR(\"No formula\")";
+
+      console.log("RAW backend EXACT:", lastFormula, [...lastFormula]);
+
+      outputBox.textContent = lastFormula;
+      showToast("Ready.", "success");
+
     } catch (err) {
-      console.error("Generation failed:", err);
-      output.textContent = "❌ Error — see details";
-      showError("Formula generation failed.", err?.message || String(err));
+      console.error(err);
+      showToast("Generation failed.", "error");
     } finally {
-      isGenerating = false;
-      genBtn.disabled = false;
+      generateBtn.disabled = false;
     }
   });
 
+  // CLEAR
   clearBtn.addEventListener("click", () => {
-    output.textContent = "";
-    queryInput.value = "";
-    clearError();
+    lastFormula = "";
+    outputBox.textContent = "";
+    queryBox.value = "";
   });
 
-  if (insertBtn) {
-    insertBtn.addEventListener("click", async () => {
-      if (!lastFormula) {
-        return showToast("⚠️ No formula to insert", "warn");
-      }
-      try {
-        await Excel.run(async (ctx) => {
-          const range = ctx.workbook.getSelectedRange();
-          range.load("rowCount,columnCount");
-          await ctx.sync();
+  // ------------------
+  // INSERT → Excel
+  // ------------------
+  insertBtn.addEventListener("click", async () => {
+    if (!lastFormula) return showToast("Nothing to insert.", "warn");
 
-          if (range.rowCount !== 1 || range.columnCount !== 1) {
-            const err = new Error("MULTI_CELL_SELECTION");
-            err.code = "MULTI_CELL_SELECTION";
-            throw err;
-          }
+    const cleaned = sanitizeForExcel(lastFormula);
+    console.log("Cleaned before insert:", cleaned);
 
-          range.formulas = [[lastFormula]];
-          await ctx.sync();
-        });
-        showToast("✅ Inserted", "success");
-      } catch (err) {
-        console.warn("Insert failed:", err);
-        if (err && err.code === "MULTI_CELL_SELECTION") {
-          showToast("⚠️ Select a single cell first", "warn");
-        } else {
-          showToast("⚠️ Select a cell first", "warn");
+    try {
+      await Excel.run(async (ctx) => {
+        const rng = ctx.workbook.getSelectedRange();
+        rng.load("rowCount,columnCount");
+        await ctx.sync();
+
+        if (rng.rowCount !== 1 || rng.columnCount !== 1) {
+          const e = new Error("MULTI");
+          e.code = "MULTI";
+          throw e;
         }
-      }
-    });
-  } else {
-    console.warn("No #insertBtn found — insert will not be available.");
-  }
 
-  window.addEventListener("online", () => {
-    if (lastFormula) showToast("🌐 Back online — formula restored", "info");
+        rng.formulas = [[cleaned]];
+        await ctx.sync();
+      });
+
+      showToast("Inserted.", "success");
+
+    } catch (err) {
+      console.error(err);
+      if (err.code === "MULTI")
+        showToast("Select one cell.", "warn");
+      else
+        showToast("Could not insert.", "error");
+    }
   });
-
-  console.log("🟢 ExcelWizPro UI ready");
 }

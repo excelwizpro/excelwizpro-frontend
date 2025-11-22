@@ -6,6 +6,21 @@ import { emit } from "./eventBus.js";
 
 let apiBase = DEFAULT_API_BASE;
 
+// Clean Excel formula (frontend)
+function sanitizeFormula(str = "") {
+  return String(str)
+    .replace(/[\u200B\u200C\u200D\u200E\u200F\uFEFF]/g, "") // zero-width
+    .replace(/\u00A0/g, " ")                                // NBSP
+    .replace(/[“”]/g, '"')                                  // smart quotes
+    .replace(/[‘’]/g, "'")
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/[–—−]/g, "-")
+    .replace(/\r?\n/g, " ")                                 // newlines → space
+    .replace(/ {2,}/g, " ")                                 // collapse spaces
+    .trim();
+}
+
 export function resolveApiBase() {
   try {
     const params = parseQueryParams();
@@ -21,9 +36,8 @@ export function resolveApiBase() {
         return apiBase;
       }
     }
-  } catch (err) {
-    console.warn("API base resolution error:", err);
-  }
+  } catch {}
+
   return apiBase;
 }
 
@@ -34,59 +48,43 @@ export function setApiBase(value) {
       Office.context.roamingSettings.set("excelwizpro_api_base", apiBase);
       Office.context.roamingSettings.saveAsync();
     }
-  } catch (err) {
-    console.warn("Failed to persist API base:", err);
-  }
+  } catch {}
 }
 
-export async function warmUpBackend(maxAttempts = 5) {
-  const container = document.querySelector("main.container");
-  const status = document.createElement("div");
-  Object.assign(status.style, {
-    padding: "6px",
-    marginBottom: "8px",
-    borderRadius: "6px",
-    fontSize: "0.9rem",
-    textAlign: "center"
-  });
-  if (container) container.prepend(status);
-
-  const base = resolveApiBase();
-
-  for (let i = 1; i <= maxAttempts; i++) {
-    try {
-      const r = await fetchWithRetry(`${base}/health`, { timeout: 4000 });
-      if (r.ok) {
-        status.textContent = "✅ Backend ready";
-        status.style.background = "#e6ffed";
-        status.style.color = "#0c7a0c";
-        setTimeout(() => status.remove(), 2000);
-        emit("backend:ready");
-        return;
-      }
-    } catch {
-      // ignore; will retry
-    }
-
-    status.textContent = `⏳ Waking backend… (${i}/${maxAttempts})`;
-    status.style.background = "#fff4ce";
-    status.style.color = "#976f00";
-  }
-
-  status.textContent = "❌ Backend unreachable";
-  status.style.background = "#fde7e9";
-  status.style.color = "#c22";
-  emit("backend:error");
-}
-
+// Generate Formula — patched
 export async function generateFormulaFromBackend(payload) {
   const base = resolveApiBase();
-  const r = await fetchWithRetry(`${base}/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store"
-  });
-  const data = await r.json();
-  return data.formula || '=ERROR("No formula returned")';
+
+  try {
+    const res = await fetchWithRetry(`${base}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store"
+    });
+
+    const data = await res.json();
+
+    let formula = data.formula || '=ERROR("No formula returned")';
+
+    // 🔥 Apply frontend sanitiser here too
+    formula = sanitizeFormula(formula);
+
+    // Ensure it always starts with "="
+    if (!formula.startsWith("=")) {
+      formula = "=" + formula;
+    }
+
+    return formula;
+
+  } catch (err) {
+    console.error("❌ Backend /generate failed:", err);
+
+    emit("ui:toast", {
+      message: "⚠️ Could not reach formula engine",
+      kind: "error"
+    });
+
+    throw err;
+  }
 }

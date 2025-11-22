@@ -1,4 +1,4 @@
-// core/columnMapper.js
+// src/core/columnMapper.js
 import {
   COLUMN_MAP_TTL_MS,
   MAX_DATA_ROWS_PER_COLUMN
@@ -11,6 +11,14 @@ let columnMapCache = "";
 let lastColumnMapBuild = 0;
 let refreshInProgress = false;
 
+/**
+ * Build the Smart Column Map (V15.4)
+ * ---------------------------------
+ * Forced assumptions:
+ *  - Exactly 1 header row
+ *  - Data ALWAYS starts at row 2
+ *  - This fixes all misalignment issues
+ */
 async function buildColumnMapInternal() {
   return safeExcelRun(async (ctx) => {
     const wb = ctx.workbook;
@@ -31,13 +39,17 @@ async function buildColumnMapInternal() {
       used.load("rowCount,columnCount,rowIndex,columnIndex,isNullObject");
       await ctx.sync();
 
-      if (used.isNullObject || used.rowCount < 2) continue;
+      if (used.isNullObject || used.rowCount < 1) continue;
 
-      const headerRows = Math.min(3, used.rowCount);
+      // ---------------------------------------------------------
+      // FORCE: Exactly 1 header row
+      // ---------------------------------------------------------
+      const headerRows = 1;
+
       const headerRange = sheet.getRangeByIndexes(
-        used.rowIndex,
+        used.rowIndex,         // top row
         used.columnIndex,
-        headerRows,
+        1,                     // ALWAYS 1 header row
         used.columnCount
       );
       headerRange.load("values");
@@ -51,41 +63,25 @@ async function buildColumnMapInternal() {
       await ctx.sync();
 
       const headers = headerRange.values;
-      const dataStartRowIndex = used.rowIndex + headerRows;
-      const dataLastRowIndex = used.rowIndex + used.rowCount - 1;
-      const startRow = dataStartRowIndex + 1; // 1-based
 
-      const maxLastRow = startRow + MAX_DATA_ROWS_PER_COLUMN - 1;
-      const lastRowCandidate = dataLastRowIndex + 1; // 1-based
-      const lastRow = Math.min(lastRowCandidate, maxLastRow);
+      // ---------------------------------------------------------
+      // FORCE: Data ALWAYS starts row 2
+      // ---------------------------------------------------------
+      const startRow = 2; // 1-based index
 
+      const lastRowCandidate = used.rowIndex + used.rowCount; // 1-based
+      const maxAllowed = startRow + MAX_DATA_ROWS_PER_COLUMN;
+      const lastRow = Math.min(lastRowCandidate, maxAllowed);
+
+      // ---------------------------------------------------------
+      // Column mapping (Sheet fields)
+      // ---------------------------------------------------------
       if (lastRow >= startRow) {
         for (let col = 0; col < used.columnCount; col++) {
-          const headerTexts = [];
-          for (let r = 0; r < headerRows; r++) {
-            const v = headers[r][col];
-            headerTexts[r] =
-              v !== null && v !== "" && v !== undefined ? String(v).trim() : "";
-          }
+          const primaryHeader = String(headers[0][col] ?? "").trim();
+          if (!primaryHeader) continue;
 
-          let primary = "";
-          for (let r = headerRows - 1; r >= 0; r--) {
-            if (headerTexts[r]) {
-              primary = headerTexts[r];
-              break;
-            }
-          }
-          if (!primary) continue;
-
-          let combined = primary;
-          for (let r = 0; r < headerRows - 1; r++) {
-            if (headerTexts[r] && headerTexts[r] !== primary) {
-              combined = `${headerTexts[r]} - ${combined}`;
-              break;
-            }
-          }
-
-          let normalized = normalizeName(combined);
+          let normalized = normalizeName(primaryHeader);
 
           if (globalNameCounts[normalized]) {
             globalNameCounts[normalized] += 1;
@@ -95,15 +91,17 @@ async function buildColumnMapInternal() {
           }
 
           const colLetter = columnIndexToLetter(used.columnIndex + col);
-          const safeSheetName = sheet.name.replace(/'/g, "''");
+          const safeSheet = sheet.name.replace(/'/g, "''");
 
           lines.push(
-            `${normalized} = '${safeSheetName}'!${colLetter}${startRow}:${colLetter}${lastRow}`
+            `${normalized} = '${safeSheet}'!${colLetter}${startRow}:${colLetter}${lastRow}`
           );
         }
       }
 
+      // ---------------------------------------------------------
       // Tables
+      // ---------------------------------------------------------
       const tableMeta = tables.items.map((table) => {
         return {
           table,
@@ -121,9 +119,10 @@ async function buildColumnMapInternal() {
       for (const { table, header } of tableMeta) {
         lines.push(`Table: ${table.name}`);
 
-        const headerVals = (header.values && header.values[0]) || [];
+        const headerVals = header.values?.[0] || [];
         headerVals.forEach((h) => {
           if (!h) return;
+
           let norm = normalizeName(`${table.name}.${h}`);
           if (globalNameCounts[norm]) {
             globalNameCounts[norm] += 1;
@@ -132,32 +131,35 @@ async function buildColumnMapInternal() {
             globalNameCounts[norm] = 1;
           }
 
-          // NOTE: header text may contain special chars; in practice Excel tolerates most,
-          // but if needed, further escaping logic could be added.
-          const structuredRef = `${table.name}[${h}]`;
-          lines.push(`${norm} = ${structuredRef}`);
+          const structured = `${table.name}[${h}]`;
+          lines.push(`${norm} = ${structured}`);
         });
       }
 
+      // ---------------------------------------------------------
       // Pivot markers
+      // ---------------------------------------------------------
       pivots.items.forEach((p) => lines.push(`PivotSource: ${p.name}`));
     }
 
+    // ---------------------------------------------------------
     // Named ranges
+    // ---------------------------------------------------------
     const names = wb.names;
     names.load("items/name");
     await ctx.sync();
-    const meta = [];
 
+    const namedMeta = [];
     for (const n of names.items) {
       const r = n.getRange();
       r.load("address");
-      meta.push({ name: n.name, range: r });
+      namedMeta.push({ name: n.name, range: r });
     }
     await ctx.sync();
 
-    meta.forEach(({ name, range }) => {
+    namedMeta.forEach(({ name, range }) => {
       lines.push(`NamedRange: ${name}`);
+
       let norm = normalizeName(name);
       if (globalNameCounts[norm]) {
         globalNameCounts[norm] += 1;
@@ -165,13 +167,20 @@ async function buildColumnMapInternal() {
       } else {
         globalNameCounts[norm] = 1;
       }
+
       lines.push(`${norm} = ${range.address}`);
     });
+
+    const preview = lines.join("\n").slice(0, 600);
+    console.log("🔍 Column map preview (v15.4 forced row2):\n", preview);
 
     return lines.join("\n");
   });
 }
 
+// ---------------------------------------------------------
+// Auto-refresh caching
+// ---------------------------------------------------------
 export async function autoRefreshColumnMap(force = false) {
   if (refreshInProgress) return;
   try {
@@ -182,11 +191,12 @@ export async function autoRefreshColumnMap(force = false) {
     }
 
     refreshInProgress = true;
-    console.log("🔄 Refreshing Smart Column Map…");
+    console.log("🔄 Refreshing Smart Column Map (v15.4)...");
     columnMapCache = await buildColumnMapInternal();
     lastColumnMapBuild = Date.now();
-    console.log("✅ Updated Smart Column Map");
+    console.log("✅ Updated Smart Column Map (v15.4)");
     emit("columnMap:updated", { columnMap: columnMapCache });
+
   } catch (err) {
     console.warn("Auto-refresh failed:", err);
     emit("ui:toast", { message: "⚠️ Could not refresh column map", kind: "error" });
@@ -199,7 +209,7 @@ export function getCurrentColumnMap() {
   return columnMapCache;
 }
 
-// React to workbook structure changes (invalidate cache)
+// Invalidate cache on workbook change
 on("workbook:changed", () => {
   columnMapCache = "";
   lastColumnMapBuild = 0;
